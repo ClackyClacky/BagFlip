@@ -298,7 +298,7 @@ local function sellRow(d)
       end
     end
   end
-  if sold > 0 then say(("sold %d x %s (buyback on the vendor if that was a mistake)."):format(sold, d.link or d.id)) end
+  if sold > 0 then say(("sold %d x %s."):format(sold, d.link or d.id)) end
 end
 
 local rowsUI = {}
