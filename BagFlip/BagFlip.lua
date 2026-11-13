@@ -4,10 +4,7 @@
 
 local ADDON = ...
 local AH_CUT = 0.05          -- faction auction house cut
-local DEPOSIT = 100          -- copper per listing (1s for now; set to 1 once the 1c deposit is live)
--- The deposit is subtracted below, so the margins only need to cover the time an auction takes:
-local MIN_GAIN = 100         -- copper: auction must beat the vendor by at least 1s per stack...
-local MIN_RATIO = 1.10       -- ...and pay at least 10% more than the vendor
+-- The deposit isn't counted: you get it back when the item sells. Verdicts are pure profit.
 local SLOW_SALES = 0.5       -- sold per day (TSM, EU-wide) below this counts as slow
 
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
@@ -137,10 +134,10 @@ local function judge(id, count, bound)
   if bound then return (sell > 0 and "Vendor" or "Keep"), vendorTotal, nil, "soulbound" end
   local price, spd, qty, src = ahPrice(id)
   if not price then return (sell > 0 and "Vendor" or "Keep"), vendorTotal, nil, "no auction data" end
-  local ahTotal = max(floor(price * (1 - AH_CUT)) * count - DEPOSIT, 0)  -- one listing per stack
+  local ahTotal = floor(price * (1 - AH_CUT)) * count
   local note
   if qty == 0 then note = "none listed now" elseif spd > 0 and spd < SLOW_SALES then note = "sells slowly" end
-  if ahTotal - vendorTotal >= MIN_GAIN and ahTotal >= vendorTotal * MIN_RATIO then
+  if ahTotal > vendorTotal then  -- whichever pays more
     return "AH", vendorTotal, ahTotal, note
   end
   if sell == 0 then return "Keep", 0, ahTotal, "worth too little on the AH" end
@@ -217,7 +214,7 @@ end
 ---------------------------------------------------------------------------- window
 local ROW_H, VISIBLE = 22, 16  -- VISIBLE sets the window height
 local f = CreateFrame("Frame", "BagFlipFrame", UIParent, "BasicFrameTemplateWithInset")
-f:SetSize(680, 142 + ROW_H * VISIBLE)
+f:SetSize(760, 142 + ROW_H * VISIBLE)
 f:SetPoint("CENTER")
 f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
 f:SetScript("OnDragStart", f.StartMoving); f:SetScript("OnDragStop", f.StopMovingOrSizing)
@@ -247,10 +244,10 @@ f.vendorText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 f.vendorText:SetPoint("LEFT", f.vendorBox, "RIGHT", 2, 0)
 f.vendorText:SetText("Open at vendors")
 
-local COLX = { name = 34, count = 290, vendor = 335, ah = 425, sales = 535, verdict = 595 }
-local header = CreateFrame("Frame", nil, f); header:SetPoint("TOPLEFT", 10, -94); header:SetSize(650, 16)
+local COLX = { name = 34, count = 290, vendor = 335, ah = 425, profit = 525, sales = 610, verdict = 670 }
+local header = CreateFrame("Frame", nil, f); header:SetPoint("TOPLEFT", 10, -94); header:SetSize(730, 16)
 for k, label in pairs({ name = "Item", count = "Qty", vendor = "Vendor", ah = "Auction (after cut)",
-                        sales = "Sales/day", verdict = "Do this" }) do
+                        profit = "AH profit", sales = "Sales/day", verdict = "Do this" }) do
   local t = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   t:SetPoint("LEFT", COLX[k] - 10, 0); t:SetText(label)
 end
@@ -258,7 +255,7 @@ end
 local scroll = CreateFrame("ScrollFrame", "BagFlipScroll", f, "UIPanelScrollFrameTemplate")
 scroll:SetPoint("TOPLEFT", 10, -112); scroll:SetPoint("BOTTOMRIGHT", -30, 12)
 local list = CreateFrame("Frame", nil, scroll)
-list:SetSize(640, ROW_H)
+list:SetSize(720, ROW_H)
 scroll:SetScrollChild(list)
 
 local VERDICT = {
@@ -306,9 +303,9 @@ local function getRow(i)
   local r = rowsUI[i]
   if r then return r end
   r = CreateFrame("Button", nil, list)
-  r:SetSize(640, ROW_H); r:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
+  r:SetSize(720, ROW_H); r:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
   r.icon = r:CreateTexture(nil, "ARTWORK"); r.icon:SetSize(18, 18); r.icon:SetPoint("LEFT", 2, 0)
-  for _, k in ipairs({ "name", "count", "vendor", "ah", "sales", "verdict" }) do
+  for _, k in ipairs({ "name", "count", "vendor", "ah", "profit", "sales", "verdict" }) do
     local t = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     t:SetPoint("LEFT", COLX[k] - 10, 0); t:SetJustifyH("LEFT"); r[k] = t
   end
@@ -335,6 +332,12 @@ local function refresh()
     ui.count:SetText(d.count)
     ui.vendor:SetText(d.vendor > 0 and money(d.vendor) or "|cff9d9d9d-|r")
     ui.ah:SetText(d.ah and money(d.ah) or "|cff9d9d9d-|r")
+    -- How much more the auction house pays than the vendor for this stack (negative: vendor pays more).
+    local diff = d.ah and (d.ah - d.vendor)
+    if not diff then ui.profit:SetText("|cff9d9d9d-|r")
+    elseif diff > 0 then ui.profit:SetText("|cff40d060+|r" .. money(diff))
+    elseif diff < 0 then ui.profit:SetText("|cffff6060-|r" .. money(-diff))
+    else ui.profit:SetText(money(0)) end
     local ph = not d.bound and perDay(d.id)
     ui.sales:SetText(ph or "|cff9d9d9d-|r")
     ui.verdict:SetText(VERDICT[d.verdict] .. (d.note and (" |cff9d9d9d" .. d.note .. "|r") or ""))

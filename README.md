@@ -11,9 +11,12 @@ Type `/bf` to open a list of everything in your bags, reagent bag and bank. For 
 | Column | Meaning |
 |---|---|
 | Vendor | What a vendor pays for the whole stack (from the game) |
-| Auction (after cut) | What you'd get on your faction's auction house after the 5% cut and the deposit |
+| Auction (after cut) | What you'd get on your faction's auction house after the 5% cut |
+| AH profit | How much more the auction house pays than the vendor (red when the vendor pays more) |
 | Sales/day | How many sell per day across EU Forever (TSM data), a rough guide to demand |
-| Do this | **Auction**, **Vendor** or **Keep / bin**, plus warnings like *sells slowly* or *none listed now* |
+| Do this | **Auction** if the auction house pays more, otherwise **Vendor** (or **Keep / bin**), plus warnings like *sells slowly* or *none listed now* |
+
+The verdict is pure profit: whichever pays more wins. The deposit isn't counted because you get it back when the item sells. Check *Sales/day* and the warnings for items that may take a while to sell.
 
 At the top it totals what you'd get for vendoring everything versus following its advice.
 
@@ -52,14 +55,11 @@ The game only lets addons read your bank while you're at it. BagFlip saves the b
 
 ## Tuning
 
-The numbers at the top of `BagFlip.lua` decide the verdicts:
+The numbers at the top of `BagFlip.lua`:
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `AH_CUT` | `0.05` | Faction auction house cut |
-| `DEPOSIT` | `100` | Deposit per listing in copper (1s). Change to `1` if the 1c deposit goes live |
-| `MIN_GAIN` | `100` | The auction must beat the vendor by at least this much copper per stack... |
-| `MIN_RATIO` | `1.10` | ...and pay at least this many times the vendor price |
 | `SLOW_SALES` | `0.5` | Below this many sales per day, the item is flagged *sells slowly* |
 
 ## Privacy
