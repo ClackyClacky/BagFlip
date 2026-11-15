@@ -1,6 +1,6 @@
 # BagFlip
 
-A World of Warcraft addon for **WoW Forever (EU PvP)** that answers one question for every item in your bags: *sell it to the vendor, or list it on the auction house?*
+A World of Warcraft addon for **WoW Forever** that answers one question for every item in your bags: *sell it to the vendor, or put it on the auction house?* Then it does either in one click.
 
 ![Interface 16001](https://img.shields.io/badge/WoW%20Forever-16001-blue)
 
@@ -11,47 +11,56 @@ Type `/bf` to open a list of everything in your bags, reagent bag and bank. For 
 | Column | Meaning |
 |---|---|
 | Vendor | What a vendor pays for the whole stack (from the game) |
-| Auction (after cut) | What you'd get on your faction's auction house after the 5% cut |
+| Auction (after cut) | What you'd get on the auction house after the 5% cut and the 1s deposit |
 | AH profit | How much more the auction house pays than the vendor (red when the vendor pays more) |
-| Sales/day | How many sell per day across EU Forever (TSM data), a rough guide to demand |
-| Do this | **Auction** if the auction house pays more, otherwise **Vendor** (or **Keep / bin**), plus warnings like *sells slowly* or *none listed now* |
+| Do this | **Auction** if the auction house pays more, otherwise **Vendor** (or **Keep / bin**), plus notes like *scan 5d old* or *no auction data* |
 
-The verdict is pure profit: whichever pays more wins. The deposit isn't counted because you get it back when the item sells. Check *Sales/day* and the warnings for items that may take a while to sell.
+The verdict is pure profit: whichever pays more wins, however small the difference. Use the *AH profit* column to decide whether a small gain is worth listing.
 
 At the top it totals what you'd get for vendoring everything versus following its advice.
 
-### Selling
+## Prices
 
-- **Click a row while talking to a vendor** to sell every stack of that item.
-- Rows marked **Auction** need **Shift-click**, so you don't sell something the auction house would pay more for.
-- Clicking does nothing if no vendor is open, so it can never use or equip an item by mistake.
-- Bank items and things vendors won't buy can't be sold from the list.
-- Made a mistake? Use the vendor's Buyback tab.
+- **Vendor prices** come from the game.
+- **Auction prices** come from your own [Auctionator](https://www.curseforge.com/wow/addons/auctionator) scans: the cheapest listing in your latest scan, minus 1c. Do a **Full Scan** on Auctionator's tab at the auction house; there's no need to `/reload` afterwards. Scans 2 days old or more are still used, with a note saying how old they are.
 
-### Bank
+Without Auctionator, nothing has an auction price, so everything says Vendor.
 
-The game only lets addons read your bank while you're at it. BagFlip saves the bank's contents each time you visit and shows them (marked *(bank)*) the rest of the time. This is saved per character.
+## One-click selling and posting
 
-### Options
+Hover a row to see what a click will do.
+
+**At a vendor**, clicking a row sells every stack of that item from your bags. Made a mistake? Use the vendor's Buyback tab.
+
+**At the auction house**, clicking a row posts all of that item in your bags (up to the most the auction house allows in one go) at your Auctionator price minus 1c, for the longest duration.
+
+To stop one stray click going the wrong way:
+
+- Rows marked **Auction** need **Shift-click** to sell to a vendor.
+- Rows marked **Vendor** need **Shift-click** to post on the auction house.
+- With neither window open, clicking does nothing, so it can never use or equip an item by mistake.
+- Bank items, soulbound items, and items with no auction price can't be posted.
+
+## Bank
+
+The game only lets addons read your bank while you're at it. BagFlip saves the bank's contents each time you visit and shows them (marked *(bank)*) the rest of the time. This is saved per character. Take bank items out to sell or post them.
+
+## Options
 
 | Option | How |
 |---|---|
 | Include bank items | Checkbox in the window, or `/bf bank` |
-| Open at vendors | Checkbox in the window, or `/bf vendor`. If BagFlip opened on its own, it closes when you leave the vendor |
+| Open at vendors | Checkbox in the window, or `/bf vendor` |
+| Open at auction house | Checkbox in the window, or `/bf ah` |
+
+When BagFlip opened on its own at a vendor or the auction house, it closes again when you leave.
 
 ## Install
 
-1. Download this repository (**Code → Download ZIP**) and unzip it.
-2. Copy the `BagFlip` folder into `World of Warcraft\_forever_\Interface\AddOns\`.
-3. Restart the game or type `/reload`.
-
-[Auctionator](https://www.curseforge.com/wow/addons/auctionator) is optional. If installed, BagFlip uses your own recent scans (up to 2 days old) ahead of the bundled snapshot.
-
-## Where the prices come from
-
-- **Vendor prices:** the game itself.
-- **Auction prices:** `Prices.lua`, a snapshot of the EU PvP Horde and Alliance auction houses taken on **10 November 2026**. It doesn't update itself, so it gets less accurate over time. A recent Auctionator scan is more accurate.
-- **Sales per day:** TradeSkillMaster's public EU Forever region data.
+1. Install [Auctionator](https://www.curseforge.com/wow/addons/auctionator) if you don't have it.
+2. Download this repository (**Code → Download ZIP**) and unzip it.
+3. Copy the `BagFlip` folder into `World of Warcraft\_forever_\Interface\AddOns\`.
+4. Restart the game or type `/reload`, then do a Full Scan at the auction house.
 
 ## Tuning
 
@@ -60,7 +69,8 @@ The numbers at the top of `BagFlip.lua`:
 | Setting | Default | Meaning |
 |---|---|---|
 | `AH_CUT` | `0.05` | Faction auction house cut |
-| `SLOW_SALES` | `0.5` | Below this many sales per day, the item is flagged *sells slowly* |
+| `DEPOSIT` | `100` | Deposit per listing in copper (1s). Change to `1` if the 1c deposit goes live |
+| `POST_DURATION` | `3` | Auction length when you click to post: `1`, `2` or `3` (longest) |
 
 ## Privacy
 

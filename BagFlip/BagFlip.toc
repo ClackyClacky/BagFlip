@@ -1,9 +1,8 @@
 ## Interface: 16001
 ## OptionalDeps: Auctionator
 ## Title: BagFlip
-## Notes: Vendor it or auction it? Compares every item in your bags with EU PvP auction prices. /bagflip
-## Version: 1.0
+## Notes: Vendor it or auction it? Compares every item in your bags and bank with your Auctionator prices. /bagflip
+## Version: 2.0
 ## SavedVariables: BagFlipDB
 
-Prices.lua
 BagFlip.lua

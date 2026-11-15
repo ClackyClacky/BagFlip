@@ -1,11 +1,12 @@
 -- BagFlip: for each item in your bags, should you sell it to a vendor or list it on the auction house?
--- Vendor prices come from the game itself. Auction prices come from Prices.lua, a snapshot of
--- the EU PvP auction houses, or from your own Auctionator scans when those are recent.
+-- Vendor prices come from the game itself. Auction prices come from your own Auctionator scans
+-- (do a full scan at the auction house; newer scans give better advice).
 
 local ADDON = ...
 local AH_CUT = 0.05          -- faction auction house cut
--- The deposit isn't counted: you get it back when the item sells. Verdicts are pure profit.
-local SLOW_SALES = 0.5       -- sold per day (TSM, EU-wide) below this counts as slow
+local DEPOSIT = 100          -- copper per listing (1s now; set to 1 once the 1c deposit is live)
+local POST_DURATION = 3      -- auction length when you click to post: 3 = the longest (24h on Forever)
+-- Verdicts are pure profit after the cut and the deposit: whichever pays more wins.
 
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
 local floor, max, min = math.floor, math.max, math.min
@@ -49,20 +50,6 @@ local function money(c)
   return (g > 0 and g .. "g " or "") .. ((g > 0 or s > 0) and s .. "s " or "") .. cc .. "c"
 end
 
--- Sales per day, TSM's EU-wide figure (all Forever auction houses in the region).
-local function perDay(id)
-  local spd = BagFlipPrices and BagFlipPrices.sold and BagFlipPrices.sold[id]
-  if not spd or spd <= 0 then return nil end
-  if spd >= 10 then return ("%d"):format(floor(spd + 0.5)) end
-  if spd >= 0.1 then return ("%.1f"):format(spd) end
-  return "<0.1"
-end
-
-local function faction()
-  local f = UnitFactionGroup("player")
-  return (f == "Alliance" or f == "Horde") and f or "Horde"
-end
-
 local function slotInfo(bag, slot)
   if C_Container and C_Container.GetContainerItemInfo then
     local i = C_Container.GetContainerItemInfo(bag, slot)
@@ -90,41 +77,27 @@ local function isBound(bag, slot, flag)
   return false
 end
 
--- Auctionator's own scan of *your* auction house wins when it is recent (<= 2 days old).
-local function auctionatorPrice(id)
+-- Price per unit we could list at: the cheapest price in your latest Auctionator scan, minus 1c.
+-- Returns price and a note on how old the scan is (nil when it is from today or yesterday).
+local function hasAuctionator()
   local api = Auctionator and Auctionator.API and Auctionator.API.v1
-  if not (api and api.GetAuctionPriceByItemID) then return nil end
-  local ok, price = pcall(api.GetAuctionPriceByItemID, "BagFlip", id)
-  if not ok or not price or price <= 0 then return nil end
-  local okAge, age = pcall(api.GetAuctionAgeByItemID, "BagFlip", id)
-  if okAge and age and age > 2 then return nil end
-  return price, (okAge and age) or 0
+  return api and api.GetAuctionPriceByItemID and api
 end
 
--- Price per unit we could realistically list at on our faction's auction house.
--- Returns price, soldPerDay, listedQty (-1 = from Auctionator), source note.
--- Snapshot entries in Prices.lua are { lowest, market, average, listed } in copper.
 local function ahPrice(id)
-  local scanned, age = auctionatorPrice(id)
-  local spd0 = BagFlipPrices and BagFlipPrices.sold and BagFlipPrices.sold[id] or 0
-  if scanned then
-    return max(scanned - 1, 1), spd0, -1, (age == 0 and "your scan today" or ("your scan, " .. age .. "d old"))
+  local api = hasAuctionator()
+  if not api then return nil end
+  local ok, price = pcall(api.GetAuctionPriceByItemID, "BagFlip", id)
+  if not ok or not price or price <= 0 then return nil end
+  local note
+  if api.GetAuctionAgeByItemID then
+    local okAge, age = pcall(api.GetAuctionAgeByItemID, "BagFlip", id)
+    if okAge then
+      if age == nil then note = "scan 3+ weeks old"          -- Auctionator stops counting at 21 days
+      elseif age >= 2 then note = "scan " .. age .. "d old" end
+    end
   end
-  local d = BagFlipPrices and BagFlipPrices[faction()]
-  local p = d and d[id]
-  if not p then return nil end
-  local low, market, avg, qty = p[1], p[2], p[3], p[4]
-  local spd = BagFlipPrices.sold and BagFlipPrices.sold[id] or 0
-  local price
-  if qty > 0 and market > 0 then
-    price = market
-    if avg > 0 then price = min(price, floor(avg * 1.15)) end  -- ignore one inflated listing
-    price = max(price, low)
-    price = max(price - 1, 1)                                    -- undercut by 1c
-  elseif avg > 0 then
-    price = avg                                                 -- none listed: last known average
-  end
-  return price, spd, qty, nil
+  return max(price - 1, 1), note
 end
 
 -- Returns: verdict ("AH", "Vendor" or "Keep"), vendor total, AH net total, note
@@ -132,11 +105,9 @@ local function judge(id, count, bound)
   local sell = select(11, GetItemInfo(id)) or 0
   local vendorTotal = sell * count
   if bound then return (sell > 0 and "Vendor" or "Keep"), vendorTotal, nil, "soulbound" end
-  local price, spd, qty, src = ahPrice(id)
+  local price, note = ahPrice(id)
   if not price then return (sell > 0 and "Vendor" or "Keep"), vendorTotal, nil, "no auction data" end
-  local ahTotal = floor(price * (1 - AH_CUT)) * count
-  local note
-  if qty == 0 then note = "none listed now" elseif spd > 0 and spd < SLOW_SALES then note = "sells slowly" end
+  local ahTotal = floor(price * (1 - AH_CUT)) * count - DEPOSIT  -- one listing per stack
   if ahTotal > vendorTotal then  -- whichever pays more
     return "AH", vendorTotal, ahTotal, note
   end
@@ -214,7 +185,7 @@ end
 ---------------------------------------------------------------------------- window
 local ROW_H, VISIBLE = 22, 16  -- VISIBLE sets the window height
 local f = CreateFrame("Frame", "BagFlipFrame", UIParent, "BasicFrameTemplateWithInset")
-f:SetSize(760, 142 + ROW_H * VISIBLE)
+f:SetSize(700, 142 + ROW_H * VISIBLE)
 f:SetPoint("CENTER")
 f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
 f:SetScript("OnDragStart", f.StartMoving); f:SetScript("OnDragStop", f.StopMovingOrSizing)
@@ -239,15 +210,20 @@ f.bankBox:SetSize(22, 22); f.bankBox:SetPoint("TOPLEFT", 10, -66)
 f.bankText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 f.bankText:SetPoint("LEFT", f.bankBox, "RIGHT", 2, 0)
 f.vendorBox = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
-f.vendorBox:SetSize(22, 22); f.vendorBox:SetPoint("TOPLEFT", 400, -66)
+f.vendorBox:SetSize(22, 22); f.vendorBox:SetPoint("TOPLEFT", 380, -66)
 f.vendorText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 f.vendorText:SetPoint("LEFT", f.vendorBox, "RIGHT", 2, 0)
 f.vendorText:SetText("Open at vendors")
+f.ahBox = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+f.ahBox:SetSize(22, 22); f.ahBox:SetPoint("TOPLEFT", 510, -66)
+f.ahText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+f.ahText:SetPoint("LEFT", f.ahBox, "RIGHT", 2, 0)
+f.ahText:SetText("Open at auction house")
 
-local COLX = { name = 34, count = 290, vendor = 335, ah = 425, profit = 525, sales = 610, verdict = 670 }
-local header = CreateFrame("Frame", nil, f); header:SetPoint("TOPLEFT", 10, -94); header:SetSize(730, 16)
+local COLX = { name = 34, count = 290, vendor = 335, ah = 425, profit = 525, verdict = 610 }
+local header = CreateFrame("Frame", nil, f); header:SetPoint("TOPLEFT", 10, -94); header:SetSize(670, 16)
 for k, label in pairs({ name = "Item", count = "Qty", vendor = "Vendor", ah = "Auction (after cut)",
-                        profit = "AH profit", sales = "Sales/day", verdict = "Do this" }) do
+                        profit = "AH profit", verdict = "Do this" }) do
   local t = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   t:SetPoint("LEFT", COLX[k] - 10, 0); t:SetText(label)
 end
@@ -255,32 +231,52 @@ end
 local scroll = CreateFrame("ScrollFrame", "BagFlipScroll", f, "UIPanelScrollFrameTemplate")
 scroll:SetPoint("TOPLEFT", 10, -112); scroll:SetPoint("BOTTOMRIGHT", -30, 12)
 local list = CreateFrame("Frame", nil, scroll)
-list:SetSize(720, ROW_H)
+list:SetSize(660, ROW_H)
 scroll:SetScrollChild(list)
 
 local VERDICT = {
   AH = "|cff40d060Auction|r", Vendor = "|cffffd100Vendor|r", Keep = "|cff9d9d9dKeep / bin|r",
 }
----------------------------------------------------------------------------- click to sell
--- Selling uses the same call as right-clicking the item in your bag. Away from a vendor that
--- would use or equip it instead, so it only ever runs while a merchant window is open.
-local merchantOpen = false
-local autoOpened = false  -- window was opened by a vendor visit, so close it when leaving
+---------------------------------------------------------------------------- click to sell / post
+-- At a vendor a click sells; at the auction house it posts. Selling uses the same call as
+-- right-clicking the item in your bag, which away from a vendor would use or equip it instead,
+-- so nothing happens unless one of those windows is open.
+local merchantOpen, ahOpen = false, false
+local autoOpened = false  -- window was opened by a vendor/AH visit, so close it when leaving
 local useItem = (C_Container and C_Container.UseContainerItem) or UseContainerItem
 local function say(msg) print("|cff40d060BagFlip|r " .. msg) end
+local function sameBound(a, b) return (a and true or false) == (b and true or false) end
 
-local function sellHint(d)
-  if d.bank then return "|cff9d9d9dIn your bank: take it out to sell it|r" end
-  if (d.vendor or 0) <= 0 then return "|cff9d9d9dVendors won't buy this|r" end
-  if not merchantOpen then return "|cff9d9d9dOpen a vendor, then click to sell|r" end
-  if d.verdict == "AH" then return "|cffffd100Shift-click to sell anyway (the AH pays more)|r" end
-  return "|cff40d060Click to sell to the vendor|r"
+-- First unlocked bag slot holding this row's item (bags only, matching bound state).
+local function findSlot(d)
+  for _, bag in ipairs(BAG_IDS) do
+    for slot = 1, numSlots(bag) or 0 do
+      local id, _, _, _, boundFlag, locked = slotInfo(bag, slot)
+      if id == d.id and not locked and sameBound(isBound(bag, slot, boundFlag), d.bound) then return bag, slot end
+    end
+  end
+end
+
+local function clickHint(d)
+  if d.bank then return "|cff9d9d9dIn your bank: take it out first|r" end
+  if ahOpen then
+    if d.bound then return "|cff9d9d9dSoulbound: can't be auctioned|r" end
+    local unit = ahPrice(d.id)
+    if not unit then return "|cff9d9d9dNo auction price yet: do a full scan first|r" end
+    local what = ("all %d at %s each"):format(d.count, money(unit))
+    if d.verdict ~= "AH" then return "|cffffd100Shift-click to post " .. what .. " anyway (the vendor pays more)|r" end
+    return "|cff40d060Click to post " .. what .. "|r"
+  end
+  if merchantOpen then
+    if (d.vendor or 0) <= 0 then return "|cff9d9d9dVendors won't buy this|r" end
+    if d.verdict == "AH" then return "|cffffd100Shift-click to sell anyway (the AH pays more)|r" end
+    return "|cff40d060Click to sell to the vendor|r"
+  end
+  return "|cff9d9d9dAt a vendor, click to sell. At the auction house, click to post.|r"
 end
 
 local function sellRow(d)
-  if d.bank then say("that stack is in your bank."); return end
   if (d.vendor or 0) <= 0 then say("vendors won't buy that."); return end
-  if not merchantOpen then say("open a vendor first, then click to sell."); return end
   if d.verdict == "AH" and not IsShiftKeyDown() then
     say("the auction house pays more for that. Shift-click to sell it anyway."); return
   end
@@ -288,7 +284,7 @@ local function sellRow(d)
   for _, bag in ipairs(BAG_IDS) do
     for slot = 1, numSlots(bag) or 0 do
       local id, count, _, _, boundFlag, locked = slotInfo(bag, slot)
-      if id == d.id and not locked and (isBound(bag, slot, boundFlag) and true or false) == (d.bound and true or false) then
+      if id == d.id and not locked and sameBound(isBound(bag, slot, boundFlag), d.bound) then
         if not merchantOpen then return end
         useItem(bag, slot)
         sold = sold + (count or 1)
@@ -298,14 +294,50 @@ local function sellRow(d)
   if sold > 0 then say(("sold %d x %s."):format(sold, d.link or d.id)) end
 end
 
+-- Posts every one you have in your bags (up to what the auction house allows in one go)
+-- at your latest Auctionator price minus 1c.
+local function postRow(d)
+  if d.bound then say("soulbound items can't be auctioned."); return end
+  local unit = ahPrice(d.id)
+  if not unit then say("no auction price for that yet. Do a full scan first."); return end
+  if d.verdict ~= "AH" and not IsShiftKeyDown() then
+    say("the vendor pays more for that. Shift-click to post it anyway."); return
+  end
+  local AH = C_AuctionHouse
+  if not (AH and AH.PostCommodity and AH.PostItem and ItemLocation) then
+    say("can't post on this auction house from BagFlip. Use Auctionator's Selling tab."); return
+  end
+  local bag, slot = findSlot(d)
+  if not bag then say("couldn't find that item in your bags."); return end
+  local loc = ItemLocation:CreateFromBagAndSlot(bag, slot)
+  if AH.IsSellItemValid and not AH.IsSellItemValid(loc, false) then say("that item can't be auctioned."); return end
+  local qty = d.count
+  if AH.GetAvailablePostCount then qty = min(qty, AH.GetAvailablePostCount(loc) or qty) end
+  if qty < 1 then say("nothing of that left to post."); return end
+  local COMMODITY = Enum and Enum.ItemCommodityStatus and Enum.ItemCommodityStatus.Commodity or 2
+  if AH.GetItemCommodityStatus and AH.GetItemCommodityStatus(loc) == COMMODITY then
+    AH.PostCommodity(loc, POST_DURATION, qty, unit)
+  else
+    AH.PostItem(loc, POST_DURATION, qty, nil, unit)
+  end
+  say(("posting %d x %s at %s each."):format(qty, d.link or d.id, money(unit)))
+end
+
+local function clickRow(d)
+  if d.bank then say("that stack is in your bank. Take it out first."); return end
+  if ahOpen then postRow(d)
+  elseif merchantOpen then sellRow(d)
+  else say("open a vendor to sell, or the auction house to post.") end
+end
+
 local rowsUI = {}
 local function getRow(i)
   local r = rowsUI[i]
   if r then return r end
   r = CreateFrame("Button", nil, list)
-  r:SetSize(720, ROW_H); r:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
+  r:SetSize(660, ROW_H); r:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
   r.icon = r:CreateTexture(nil, "ARTWORK"); r.icon:SetSize(18, 18); r.icon:SetPoint("LEFT", 2, 0)
-  for _, k in ipairs({ "name", "count", "vendor", "ah", "profit", "sales", "verdict" }) do
+  for _, k in ipairs({ "name", "count", "vendor", "ah", "profit", "verdict" }) do
     local t = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     t:SetPoint("LEFT", COLX[k] - 10, 0); t:SetJustifyH("LEFT"); r[k] = t
   end
@@ -314,10 +346,10 @@ local function getRow(i)
   r:SetScript("OnEnter", function(self)
     if not self.data then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetHyperlink(self.data.link)
-    GameTooltip:AddLine(sellHint(self.data)); GameTooltip:Show()
+    GameTooltip:AddLine(clickHint(self.data)); GameTooltip:Show()
   end)
   r:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  r:SetScript("OnClick", function(self) if self.data then sellRow(self.data) end end)
+  r:SetScript("OnClick", function(self) if self.data then clickRow(self.data) end end)
   rowsUI[i] = r
   return r
 end
@@ -331,15 +363,15 @@ local function refresh()
     ui.name:SetText(d.bank and (d.link .. " |cff9d9d9d(bank)|r") or d.link)
     ui.count:SetText(d.count)
     ui.vendor:SetText(d.vendor > 0 and money(d.vendor) or "|cff9d9d9d-|r")
-    ui.ah:SetText(d.ah and money(d.ah) or "|cff9d9d9d-|r")
+    if not d.ah then ui.ah:SetText("|cff9d9d9d-|r")
+    elseif d.ah < 0 then ui.ah:SetText("|cffff6060-|r" .. money(-d.ah))  -- the deposit is more than it sells for
+    else ui.ah:SetText(money(d.ah)) end
     -- How much more the auction house pays than the vendor for this stack (negative: vendor pays more).
     local diff = d.ah and (d.ah - d.vendor)
     if not diff then ui.profit:SetText("|cff9d9d9d-|r")
     elseif diff > 0 then ui.profit:SetText("|cff40d060+|r" .. money(diff))
     elseif diff < 0 then ui.profit:SetText("|cffff6060-|r" .. money(-diff))
     else ui.profit:SetText(money(0)) end
-    local ph = not d.bound and perDay(d.id)
-    ui.sales:SetText(ph or "|cff9d9d9d-|r")
     ui.verdict:SetText(VERDICT[d.verdict] .. (d.note and (" |cff9d9d9d" .. d.note .. "|r") or ""))
     ui:Show()
   end
@@ -355,10 +387,9 @@ local function update()
   for _, r in ipairs(rows) do if r.verdict == "AH" then ahCount = ahCount + 1 end end
   f.summary:SetText(("Vendor everything: %s     Auction the %d green ones, vendor the rest: |cff40d060%s|r")
     :format(money(vendorAll), ahCount, money(smart)))
-  local snap = BagFlipPrices and BagFlipPrices.snapshot or "missing"
-  local src = (Auctionator and Auctionator.API) and "your Auctionator scans first, then " or ""
-  f.sub:SetText(("Auction: %sEU PvP %s snapshot (%s).  Sales/day: TSM, all EU Forever.  Vendor: the game.")
-    :format(src, faction(), snap))
+  f.sub:SetText(hasAuctionator()
+    and "Auction prices: your latest Auctionator scans (cheapest listing, minus 1c).  Vendor prices: the game."
+    or "|cffff6060Auctionator isn't installed or enabled, so there are no auction prices: everything says Vendor.|r")
   local store = db and charBank()
   local seen
   if bankOpen then seen = "bank is open, live"
@@ -370,6 +401,7 @@ local function update()
   f.bankBox:SetChecked(not (db and db.hideBank))
   f.bankText:SetText("Include bank items |cff9d9d9d(" .. seen .. ")|r")
   f.vendorBox:SetChecked(db and db.openAtVendor and true or false)
+  f.ahBox:SetChecked(db and db.openAtAH and true or false)
   refresh()
 end
 
@@ -381,6 +413,10 @@ end)
 f.vendorBox:SetScript("OnClick", function(self)
   if not db then return end
   db.openAtVendor = self:GetChecked() and true or false
+end)
+f.ahBox:SetScript("OnClick", function(self)
+  if not db then return end
+  db.openAtAH = self:GetChecked() and true or false
 end)
 
 -- Bag and item-info events only matter while the window is open, and they arrive in bursts
@@ -422,6 +458,8 @@ local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
 ev:RegisterEvent("MERCHANT_SHOW")
 ev:RegisterEvent("MERCHANT_CLOSED")
+ev:RegisterEvent("AUCTION_HOUSE_SHOW")
+ev:RegisterEvent("AUCTION_HOUSE_CLOSED")
 ev:RegisterEvent("BANKFRAME_OPENED")
 ev:RegisterEvent("BANKFRAME_CLOSED")
 ev:SetScript("OnEvent", function(self, e, name)
@@ -438,6 +476,15 @@ ev:SetScript("OnEvent", function(self, e, name)
     end
   elseif e == "MERCHANT_CLOSED" then
     merchantOpen = false
+    if autoOpened then autoOpened = false; f:Hide() end
+  elseif e == "AUCTION_HOUSE_SHOW" then
+    ahOpen = true
+    if db and db.openAtAH and not f:IsShown() then
+      f:Show()
+      autoOpened = true  -- close it again when you leave the auction house
+    end
+  elseif e == "AUCTION_HOUSE_CLOSED" then
+    ahOpen = false
     if autoOpened then autoOpened = false; f:Hide() end
   elseif e == "BANKFRAME_OPENED" then
     bankOpen = true
@@ -462,6 +509,12 @@ SlashCmdList.BAGFLIP = function(msg)
     BagFlipDB = db
     db.openAtVendor = not db.openAtVendor
     print("|cff40d060BagFlip|r opens at vendors: " .. (db.openAtVendor and "on" or "off"))
+    if f:IsShown() then update() end
+  elseif msg == "ah" then
+    db = db or BagFlipDB or {}
+    BagFlipDB = db
+    db.openAtAH = not db.openAtAH
+    print("|cff40d060BagFlip|r opens at the auction house: " .. (db.openAtAH and "on" or "off"))
     if f:IsShown() then update() end
   elseif msg == "bank" then
     db = db or BagFlipDB or {}
