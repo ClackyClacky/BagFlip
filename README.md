@@ -22,7 +22,7 @@ At the top it totals what you'd get for vendoring everything versus following it
 ## Prices
 
 - **Vendor prices** come from the game.
-- **Auction prices** come from your own [Auctionator](https://www.curseforge.com/wow/addons/auctionator) scans: the cheapest listing in your latest scan, minus 1c. Do a **Full Scan** on Auctionator's tab at the auction house; there's no need to `/reload` afterwards. Scans 2 days old or more are still used, with a note saying how old they are.
+- **Auction prices** come from your own [Auctionator](https://www.curseforge.com/wow/addons/auctionator) scans: the cheapest listing in your latest scan. BagFlip matches that price rather than undercutting it. Do a **Full Scan** on Auctionator's tab at the auction house; there's no need to `/reload` afterwards. Scans 2 days old or more are still used, with a note saying how old they are.
 
 Without Auctionator, nothing has an auction price, so everything says Vendor.
 
@@ -32,7 +32,7 @@ Hover a row to see what a click will do.
 
 **At a vendor**, clicking a row sells every stack of that item from your bags. Made a mistake? Use the vendor's Buyback tab.
 
-**At the auction house**, clicking a row posts all of that item in your bags (up to the most the auction house allows in one go) at your Auctionator price minus 1c, for the longest duration.
+**At the auction house**, clicking a row posts all of that item in your bags (up to the most the auction house allows in one go) at the cheapest price in your latest Auctionator scan (matched, not undercut), for the longest duration.
 
 To stop one stray click going the wrong way:
 

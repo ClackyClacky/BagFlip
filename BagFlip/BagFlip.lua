@@ -77,7 +77,7 @@ local function isBound(bag, slot, flag)
   return false
 end
 
--- Price per unit we could list at: the cheapest price in your latest Auctionator scan, minus 1c.
+-- Price per unit we could list at: the cheapest price in your latest Auctionator scan (no undercut).
 -- Returns price and a note on how old the scan is (nil when it is from today or yesterday).
 local function hasAuctionator()
   local api = Auctionator and Auctionator.API and Auctionator.API.v1
@@ -97,7 +97,7 @@ local function ahPrice(id)
       elseif age >= 2 then note = "scan " .. age .. "d old" end
     end
   end
-  return max(price - 1, 1), note
+  return price, note
 end
 
 -- Returns: verdict ("AH", "Vendor" or "Keep"), vendor total, AH net total, note
@@ -295,7 +295,7 @@ local function sellRow(d)
 end
 
 -- Posts every one you have in your bags (up to what the auction house allows in one go)
--- at your latest Auctionator price minus 1c.
+-- at the cheapest price in your latest Auctionator scan (matched, not undercut).
 local function postRow(d)
   if d.bound then say("soulbound items can't be auctioned."); return end
   local unit = ahPrice(d.id)
@@ -388,7 +388,7 @@ local function update()
   f.summary:SetText(("Vendor everything: %s     Auction the %d green ones, vendor the rest: |cff40d060%s|r")
     :format(money(vendorAll), ahCount, money(smart)))
   f.sub:SetText(hasAuctionator()
-    and "Auction prices: your latest Auctionator scans (cheapest listing, minus 1c).  Vendor prices: the game."
+    and "Auction prices: your latest Auctionator scans (cheapest listing).  Vendor prices: the game."
     or "|cffff6060Auctionator isn't installed or enabled, so there are no auction prices: everything says Vendor.|r")
   local store = db and charBank()
   local seen
