@@ -5,7 +5,6 @@
 local ADDON = ...
 local AH_CUT = 0.05          -- faction auction house cut
 local DEPOSIT = 100          -- copper per listing (1s now; set to 1 once the 1c deposit is live)
-local POST_DURATION = 3      -- auction length when you click to post: 3 = the longest (24h on Forever)
 -- Verdicts are pure profit after the cut and the deposit: whichever pays more wins.
 
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
@@ -261,18 +260,14 @@ local function clickHint(d)
   if d.bank then return "|cff9d9d9dIn your bank: take it out first|r" end
   if ahOpen then
     if d.bound then return "|cff9d9d9dSoulbound: can't be auctioned|r" end
-    local unit = ahPrice(d.id)
-    if not unit then return "|cff9d9d9dNo auction price yet: do a full scan first|r" end
-    local what = ("all %d at %s each"):format(d.count, money(unit))
-    if d.verdict ~= "AH" then return "|cffffd100Shift-click to post " .. what .. " anyway (the vendor pays more)|r" end
-    return "|cff40d060Click to post " .. what .. "|r"
+    return "|cff40d060Click to put it in the auction house's sell tab|r"
   end
   if merchantOpen then
     if (d.vendor or 0) <= 0 then return "|cff9d9d9dVendors won't buy this|r" end
     if d.verdict == "AH" then return "|cffffd100Shift-click to sell anyway (the AH pays more)|r" end
     return "|cff40d060Click to sell to the vendor|r"
   end
-  return "|cff9d9d9dAt a vendor, click to sell. At the auction house, click to post.|r"
+  return "|cff9d9d9dAt a vendor, click to sell. At the auction house, click to get it ready to post.|r"
 end
 
 local function sellRow(d)
@@ -294,38 +289,52 @@ local function sellRow(d)
   if sold > 0 then say(("sold %d x %s."):format(sold, d.link or d.id)) end
 end
 
--- Posts every one you have in your bags (up to what the auction house allows in one go)
--- at the cheapest price in your latest Auctionator scan (matched, not undercut).
-local function postRow(d)
+-- Puts the item in Auctionator's Selling tab (or the game's own Sell tab without Auctionator),
+-- as if you had picked it there yourself. You check the price and click Post yourself.
+local bagflipSource = {}
+local function stageInAuctionator(loc)
+  local A = Auctionator
+  if not (A and A.EventBus and A.Selling and A.Selling.Events and A.Groups and A.Groups.Utilities
+          and AuctionatorTabs_Selling and AuctionatorBagCacheFrame and C_Item and C_Item.GetItemLink) then
+    return false
+  end
+  return pcall(function()
+    if AuctionHouseFrame then
+      if AuctionHouseFrame.ItemSellFrame then AuctionHouseFrame.ItemSellFrame:SetItem(nil, nil, false) end
+      if AuctionHouseFrame.CommoditiesSellFrame then AuctionHouseFrame.CommoditiesSellFrame:SetItem(nil, nil, false) end
+    end
+    AuctionatorTabs_Selling:Click()
+    local link = C_Item.GetItemLink(loc)
+    AuctionatorBagCacheFrame:CacheLinkInfo(link, function()
+      local ok, err = pcall(function()
+        local info = A.Groups.Utilities.ToPostingItem(AuctionatorBagCacheFrame:GetByLinkInstant(link, true))
+        info.itemLink = link
+        info.location = loc
+        info.count = C_AuctionHouse.GetAvailablePostCount(loc)
+        A.EventBus:RegisterSource(bagflipSource, "BagFlip")
+        A.EventBus:Fire(bagflipSource, A.Selling.Events.BagItemClicked, info)
+      end)
+      if not ok then say("couldn't hand that to Auctionator: " .. tostring(err)) end
+    end)
+  end)
+end
+
+local function stageRow(d)
   if d.bound then say("soulbound items can't be auctioned."); return end
-  local unit = ahPrice(d.id)
-  if not unit then say("no auction price for that yet. Do a full scan first."); return end
-  if d.verdict ~= "AH" and not IsShiftKeyDown() then
-    say("the vendor pays more for that. Shift-click to post it anyway."); return
-  end
-  local AH = C_AuctionHouse
-  if not (AH and AH.PostCommodity and AH.PostItem and ItemLocation) then
-    say("can't post on this auction house from BagFlip. Use Auctionator's Selling tab."); return
-  end
+  if not ItemLocation then say("this client can't do that. put it in the sell tab by hand instead."); return end
   local bag, slot = findSlot(d)
   if not bag then say("couldn't find that item in your bags."); return end
   local loc = ItemLocation:CreateFromBagAndSlot(bag, slot)
-  if AH.IsSellItemValid and not AH.IsSellItemValid(loc, false) then say("that item can't be auctioned."); return end
-  local qty = d.count
-  if AH.GetAvailablePostCount then qty = min(qty, AH.GetAvailablePostCount(loc) or qty) end
-  if qty < 1 then say("nothing of that left to post."); return end
-  local COMMODITY = Enum and Enum.ItemCommodityStatus and Enum.ItemCommodityStatus.Commodity or 2
-  if AH.GetItemCommodityStatus and AH.GetItemCommodityStatus(loc) == COMMODITY then
-    AH.PostCommodity(loc, POST_DURATION, qty, unit)
-  else
-    AH.PostItem(loc, POST_DURATION, qty, nil, unit)
-  end
-  say(("posting %d x %s at %s each."):format(qty, d.link or d.id, money(unit)))
+  local AH = C_AuctionHouse
+  if AH and AH.IsSellItemValid and not AH.IsSellItemValid(loc, false) then say("that item can't be auctioned."); return end
+  if stageInAuctionator(loc) then return end
+  if AuctionHouseFrame and AuctionHouseFrame.SetPostItem and pcall(AuctionHouseFrame.SetPostItem, AuctionHouseFrame, loc) then return end
+  say("couldn't open the sell tab. put it in the sell tab by hand instead.")
 end
 
 local function clickRow(d)
   if d.bank then say("that stack is in your bank. Take it out first."); return end
-  if ahOpen then postRow(d)
+  if ahOpen then stageRow(d)
   elseif merchantOpen then sellRow(d)
   else say("open a vendor to sell, or the auction house to post.") end
 end

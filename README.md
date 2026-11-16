@@ -1,6 +1,6 @@
 # BagFlip
 
-A World of Warcraft addon for **WoW Forever** that answers one question for every item in your bags: *sell it to the vendor, or put it on the auction house?* Then it does either in one click.
+A World of Warcraft addon for **WoW Forever** that answers one question for every item in your bags: *sell it to the vendor, or put it on the auction house?* Then it sells in one click, or gets the item ready for you to post.
 
 ![Interface 16001](https://img.shields.io/badge/WoW%20Forever-16001-blue)
 
@@ -26,20 +26,19 @@ At the top it totals what you'd get for vendoring everything versus following it
 
 Without Auctionator, nothing has an auction price, so everything says Vendor.
 
-## One-click selling and posting
+## One-click selling, and items ready to post
 
 Hover a row to see what a click will do.
 
 **At a vendor**, clicking a row sells every stack of that item from your bags. Made a mistake? Use the vendor's Buyback tab.
 
-**At the auction house**, clicking a row posts all of that item in your bags (up to the most the auction house allows in one go) at the cheapest price in your latest Auctionator scan (matched, not undercut), for the longest duration.
+**At the auction house**, clicking a row puts that item in Auctionator's **Selling** tab. Check the price and quantity there and click **Post** yourself. BagFlip never posts anything on its own. Auctionator sets the price from its own selling settings; set its undercut to 0 if you want to match the cheapest listing. Without Auctionator, it uses the game's own Sell tab.
 
 To stop one stray click going the wrong way:
 
 - Rows marked **Auction** need **Shift-click** to sell to a vendor.
-- Rows marked **Vendor** need **Shift-click** to post on the auction house.
 - With neither window open, clicking does nothing, so it can never use or equip an item by mistake.
-- Bank items, soulbound items, and items with no auction price can't be posted.
+- Bank items and soulbound items can't be put up for auction.
 
 ## Bank
 
@@ -70,7 +69,6 @@ The numbers at the top of `BagFlip.lua`:
 |---|---|---|
 | `AH_CUT` | `0.05` | Faction auction house cut |
 | `DEPOSIT` | `100` | Deposit per listing in copper (1s). Change to `1` if the 1c deposit goes live |
-| `POST_DURATION` | `3` | Auction length when you click to post: `1`, `2` or `3` (longest) |
 
 ## Privacy
 
