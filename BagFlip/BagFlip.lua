@@ -165,20 +165,24 @@ local function scanBags()
   if store and store.items then
     for _, r in ipairs(store.items) do addStack(rows, byKey, r.id, r.count, r.link, r.icon, r.bound, true) end
   end
-  local vendorAll, smart = 0, 0
+  local totals = { bags = { vendor = 0, smart = 0, ah = 0, n = 0 }, bank = { vendor = 0, smart = 0, ah = 0, n = 0 } }
   for _, r in ipairs(rows) do
     r.verdict, r.vendor, r.ah, r.note = judge(r.id, r.count, r.bound)
     r.gain = (r.verdict == "AH") and (r.ah - r.vendor) or 0
-    vendorAll = vendorAll + r.vendor
-    smart = smart + (r.verdict == "AH" and r.ah or r.vendor)
+    local t = r.bank and totals.bank or totals.bags
+    t.n = t.n + 1
+    t.vendor = t.vendor + r.vendor
+    t.smart = t.smart + (r.verdict == "AH" and r.ah or r.vendor)
+    if r.verdict == "AH" then t.ah = t.ah + 1 end
   end
   local order = { AH = 0, Vendor = 1, Keep = 2 }
   table.sort(rows, function(a, b)
+    if (a.bank and 1 or 0) ~= (b.bank and 1 or 0) then return not a.bank end
     if order[a.verdict] ~= order[b.verdict] then return order[a.verdict] < order[b.verdict] end
     if a.gain ~= b.gain then return a.gain > b.gain end
     return (a.vendor or 0) > (b.vendor or 0)
   end)
-  return rows, vendorAll, smart
+  return rows, totals
 end
 
 ---------------------------------------------------------------------------- window
@@ -352,6 +356,8 @@ local function getRow(i)
   end
   r.name:SetWidth(245); r.name:SetWordWrap(false)
   r.hl = r:CreateTexture(nil, "HIGHLIGHT"); r.hl:SetAllPoints(); r.hl:SetColorTexture(1, 1, 1, 0.06)
+  r.section = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  r.section:SetPoint("LEFT", 4, 0); r.section:SetPoint("RIGHT", -4, 0); r.section:SetJustifyH("LEFT")
   r:SetScript("OnEnter", function(self)
     if not self.data then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetHyperlink(self.data.link)
@@ -364,12 +370,23 @@ local function getRow(i)
 end
 
 local data = {}
+local ROW_FIELDS = { "name", "count", "vendor", "ah", "profit", "verdict" }
 local function refresh()
   for i, d in ipairs(data) do
     local ui = getRow(i)
+    if d.section then  -- a heading row between your bags and your bank
+      ui.data = false
+      ui.icon:SetTexture(nil)
+      for _, k in ipairs(ROW_FIELDS) do ui[k]:SetText("") end
+      ui.section:SetText(d.section)
+      ui.hl:SetAlpha(0)
+      ui:Show()
+    else
+    ui.section:SetText("")
+    ui.hl:SetAlpha(1)
     ui.data = d
     ui.icon:SetTexture(d.icon)
-    ui.name:SetText(d.bank and (d.link .. " |cff9d9d9d(bank)|r") or d.link)
+    ui.name:SetText(d.link)
     ui.count:SetText(d.count)
     ui.vendor:SetText(d.vendor > 0 and money(d.vendor) or "|cff9d9d9d-|r")
     if not d.ah then ui.ah:SetText("|cff9d9d9d-|r")
@@ -383,6 +400,7 @@ local function refresh()
     else ui.profit:SetText(money(0)) end
     ui.verdict:SetText(VERDICT[d.verdict] .. (d.note and (" |cff9d9d9d" .. d.note .. "|r") or ""))
     ui:Show()
+    end
   end
   for i = #data + 1, #rowsUI do rowsUI[i]:Hide(); rowsUI[i].data = nil end
   list:SetHeight(max(ROW_H, #data * ROW_H))
@@ -390,12 +408,10 @@ end
 
 local function update()
   pending = false
-  local rows, vendorAll, smart = scanBags()
-  data = rows
-  local ahCount = 0
-  for _, r in ipairs(rows) do if r.verdict == "AH" then ahCount = ahCount + 1 end end
-  f.summary:SetText(("Vendor everything: %s     Auction the %d green ones, vendor the rest: |cff40d060%s|r")
-    :format(money(vendorAll), ahCount, money(smart)))
+  local rows, totals = scanBags()
+  local bags = totals.bags
+  f.summary:SetText(("Bags:  Vendor everything %s     Auction the %d green ones, vendor the rest: |cff40d060%s|r")
+    :format(money(bags.vendor), bags.ah, money(bags.smart)))
   f.sub:SetText(hasAuctionator()
     and "Auction prices: your latest Auctionator scans (cheapest listing).  Vendor prices: the game."
     or "|cffff6060Auctionator isn't installed or enabled, so there are no auction prices: everything says Vendor.|r")
@@ -407,6 +423,18 @@ local function update()
     seen = "as of your last visit, " .. (s < 3600 and floor(s / 60) .. "m" or s < 86400 and floor(s / 3600) .. "h"
       or floor(s / 86400) .. "d") .. " ago"
   else seen = "not seen yet: open your bank once" end
+  -- Bag rows, then a "Bank" heading, then the bank rows (they're sorted bank-last).
+  data = {}
+  local headed = false
+  for _, r in ipairs(rows) do
+    if r.bank and not headed then
+      headed = true
+      local b = totals.bank
+      data[#data + 1] = { section = ("Bank |cff9d9d9d(%s)|r   vendor everything %s, auction the %d green ones: |cff40d060%s|r")
+        :format(seen, money(b.vendor), b.ah, money(b.smart)) }
+    end
+    data[#data + 1] = r
+  end
   f.bankBox:SetChecked(not (db and db.hideBank))
   f.bankText:SetText("Include bank items |cff9d9d9d(" .. seen .. ")|r")
   f.vendorBox:SetChecked(db and db.openAtVendor and true or false)

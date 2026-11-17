@@ -17,7 +17,7 @@ Type `/bf` to open a list of everything in your bags, reagent bag and bank. For 
 
 The verdict is pure profit: whichever pays more wins, however small the difference. Use the *AH profit* column to decide whether a small gain is worth listing.
 
-At the top it totals what you'd get for vendoring everything versus following its advice.
+Bank items get their own section below your bags, under a **Bank** heading. At the top, BagFlip totals what your bags would fetch if you vendored everything versus followed its advice; the Bank heading shows the same totals for the bank.
 
 ## Prices
 
@@ -42,7 +42,7 @@ To stop one stray click going the wrong way:
 
 ## Bank
 
-The game only lets addons read your bank while you're at it. BagFlip saves the bank's contents each time you visit and shows them (marked *(bank)*) the rest of the time. This is saved per character. Take bank items out to sell or post them.
+The game only lets addons read your bank while you're at it. BagFlip saves the bank's contents each time you visit and shows them in the Bank section the rest of the time. This is saved per character. Take bank items out to sell or post them.
 
 ## Options
 
